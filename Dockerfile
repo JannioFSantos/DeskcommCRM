@@ -120,5 +120,9 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 USER nextjs
 EXPOSE 3000
+# Mantém a prova de prontidão junto da imagem. O proxy do Coolify só deve
+# encaminhar tráfego quando o processo Node aceitar conexões na porta interna.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=5 \
+  CMD node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
 # server.js é o entrypoint gerado pelo output standalone.
 CMD ["node", "server.js"]

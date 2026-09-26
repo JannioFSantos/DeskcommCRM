@@ -120,9 +120,8 @@ Caddy que não caberia. Num caso específico — proxy em `--network host`, como
 ele **pergunta em vez de adivinhar**, porque publicar atrás do proxy errado instala "com
 sucesso" um site mudo. Detalhes em [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy).
 
-Para operar mais de uma instalação na mesma VPS com Coolify — mudando domínio,
-cliente e isolamento sem perder o fluxo seguro de atualização — leia o
-[guia do Coolify](docs/deploy-coolify.md).
+Para instalar um CRM por cliente no Coolify — com domínio, variáveis e volumes
+isolados — leia o [guia do Coolify](docs/deploy-coolify.md).
 
 ### Primeiro acesso
 

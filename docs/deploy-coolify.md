@@ -1,92 +1,104 @@
-# Coolify — operar o DeskcommCRM em uma VPS compartilhada
+# Coolify — uma instalação DeskcommCRM por cliente
 
-Este guia cobre uma VPS administrada pelo **Coolify**, com o Traefik dele nas
-portas 80 e 443. Hoje, o caminho suportado é deixar o Coolify cuidar do proxy,
-DNS e HTTPS, e deixar o **kit de instalação do DeskcommCRM** cuidar da pilha do
-produto, das migrações, backups e atualizações.
+Este é o caminho para criar **um recurso Coolify por cliente**. Cada recurso
+tem seu domínio, variáveis e volumes próprios; ele não mistura clientes na
+mesma instalação do CRM.
 
-> O deploy por repositório/Git do Coolify **ainda não substitui** o kit neste
-> projeto. Não o trate como equivalente até existir uma configuração do Coolify
-> versionada e testada no repositório.
+O arquivo [`docker-compose.coolify.yml`](../docker-compose.coolify.yml) sobe a
+pilha essencial: app, worker, scheduler, WAHA, Redis e o adaptador HTTP do
+Redis. O Coolify fica responsável pelo clone do repositório, rede do recurso,
+proxy, certificado HTTPS e ciclo de deploy.
 
-## Antes de instalar: escolha o modelo de clientes
+> Este caminho usa imagens publicadas e versionadas. Não configure o Coolify
+> para compilar uma cópia de desenvolvimento do CRM na VPS de um cliente.
 
-| Modelo | Quando faz sentido | Consequência operacional |
-|---|---|---|
-| **Uma instalação multiempresa** | Você opera uma plataforma e atende todas as empresas dentro dela. | Um domínio público e uma instalação; separe os clientes por organizações e permissões do CRM. |
-| **Uma instalação por cliente** | Cada cliente precisa de domínio, credenciais, banco ou operação próprios. | Repita a instalação em diretórios distintos, com domínio, segredos, dados e backup próprios. |
+## O que preparar antes do primeiro deploy
 
-Uma VPS pode hospedar mais de uma instalação, mas isso não transforma 4 GB em
-capacidade para todos os clientes: a referência de memória do projeto é para
-uma pilha completa. Dimensione a máquina depois de medir o uso de cada CRM e de
-cada sessão de WhatsApp. Não compartilhe volumes, chaves ou projeto Supabase
-entre clientes sem uma política explícita de isolamento.
+- Um domínio ou subdomínio exclusivo, como `crm.cliente.com.br`, com registro
+  DNS `A` apontando para o IP da VPS.
+- Um projeto Supabase exclusivo para o cliente, com o schema/base do
+  DeskcommCRM aplicado e as URLs de autenticação configuradas para o domínio.
+- As imagens `app`, `worker` e `scheduler` da **mesma release** publicadas em
+  um registry que a VPS pode acessar.
+- As chaves do Supabase, IA e WhatsApp guardadas nas variáveis do recurso no
+  Coolify — nunca no repositório.
 
-## Caminho suportado na VPS com Coolify
+O Compose não cria schema nem conta administrativa no Supabase. Para esse
+provisionamento inicial, use o fluxo do
+[kit de instalação](../hostgator-setup-kit/README.md) ou aplique o baseline do
+projeto de forma controlada no projeto Supabase do cliente. Só depois suba o
+recurso no Coolify.
 
-1. Deixe o Coolify e o Traefik dele em execução. Não pare o proxy para liberar
-   as portas 80/443: isso interrompe os demais aplicativos da VPS.
-2. Para cada cliente, crie um registro DNS `A` do domínio escolhido apontando
-   para o IP público da VPS. Aguarde a propagação antes de validar o HTTPS.
-3. Acesse a VPS por SSH e instale cada cliente em uma pasta diferente. Exemplo:
+## Criar o recurso no Coolify
 
-   ```bash
-   git clone --depth 1 https://github.com/JannioFSantos/DeskcommCRM.git deskcomm-acme
-   cd deskcomm-acme
-   bash hostgator-setup-kit/install.sh
+1. Crie uma **Application** a partir do repositório Git e escolha o Build Pack
+   **Docker Compose**.
+2. Use `docker-compose.coolify.yml` como Docker Compose Location. Não selecione
+   `docker-compose.prod.yml`, pois ele contém o Caddy pensado para uma VPS sem
+   Coolify.
+3. Em Environment Variables, informe ao menos as imagens versionadas e as
+   variáveis já preparadas para o cliente:
+
+   ```dotenv
+   APP_IMAGE=ghcr.io/seu-registro/deskcommcrm:X.Y.Z
+   WORKER_IMAGE=ghcr.io/seu-registro/deskcomm-worker:X.Y.Z
+   SCHEDULER_IMAGE=ghcr.io/seu-registro/deskcomm-scheduler:X.Y.Z
+   APP_PULL_POLICY=missing
+   WORKER_PULL_POLICY=missing
+   SCHEDULER_PULL_POLICY=missing
+
+   NEXT_PUBLIC_APP_URL=https://crm.cliente.com.br
+   NEXT_PUBLIC_ADMIN_URL=https://crm.cliente.com.br
+   WAHA_API_BASE_URL=http://waha:3000
+   WAHA_WEBHOOK_BASE_URL=http://app:3000
+   UPSTASH_REDIS_REST_URL=http://srh:80
+   UPSTASH_REDIS_REST_TOKEN=<o mesmo valor de SRH_TOKEN>
    ```
 
-4. Responda o domínio, as credenciais do Supabase e as demais perguntas do
-   instalador. Ele detecta o Traefik do Coolify, grava
-   `REVERSE_PROXY=traefik` e usa o override que desativa o Caddy do produto.
-5. Abra `https://seu-dominio-do-cliente` e conclua o primeiro acesso. Se usar
-   autenticação por e-mail, confirme também a URL do site e as URLs de
-   redirecionamento no Supabase. O token opcional do Supabase permite que o
-   instalador faça essa configuração durante o processo.
+   Inclua também os segredos obrigatórios do CRM, como as chaves do Supabase,
+   `INTERNAL_SECRET`, `SRH_TOKEN`, `WAHA_API_KEY`, `WAHA_API_KEY_SHA512` e
+   `WAHA_HMAC_SECRET`. Use o [template de ambiente](../.env.example) e o kit
+   como referência dos valores; não copie segredos de outro cliente.
 
-O instalador pode pedir confirmação quando não consegue provar qual processo
-está atendendo as portas públicas. Leia a informação exibida e não force a
-decisão se houver outro proxy na VPS. Em uma execução não interativa, declare
-`REVERSE_PROXY=traefik` no `.env` somente depois de confirmar que o Traefik do
-Coolify é o proxy correto.
+4. Em **Domains** do serviço `app`, informe
+   `https://crm.cliente.com.br:3000`. O sufixo `:3000` escolhe a porta interna
+   do contêiner; quem acessa o CRM continua usando apenas
+   `https://crm.cliente.com.br`.
+5. Salve, faça o deploy e espere o health check do `app` ficar saudável antes
+   de abrir o domínio.
 
-## Regras para repetir a instalação por cliente
+O Coolify grava as variáveis no `.env` do recurso; o Compose as entrega aos
+serviços necessários. Os volumes `waha-data` e `waha-media` são persistentes e
+pertencem somente a esse recurso. Não os apague: eles guardam as sessões e as
+mídias do WhatsApp.
 
-- Use uma pasta exclusiva por cliente (`deskcomm-acme`, `deskcomm-beta` etc.).
-  O nome da pasta participa do nome do projeto Docker; reutilizá-lo pode fazer
-  uma operação alcançar a pilha errada.
-- Use um domínio exclusivo por instalação e mantenha um inventário com cliente,
-  domínio, pasta, projeto Supabase e responsável pelo backup.
-- Prefira um projeto Supabase por cliente quando houver exigência de isolamento
-  de dados. Nunca reutilize as credenciais de produção de um cliente em outro.
-- Acompanhe CPU, RAM, disco, filas e sessões do WhatsApp por instalação.
-  Reserve capacidade para atualizações e para a recuperação de backups.
-- Faça backup e teste de restauração por cliente. Não execute
-  `docker compose down -v`: esse comando remove volumes e pode apagar dados.
+## O que não deve ser configurado no painel
 
-## Atualizações e operação contínua
+Não publique manualmente `80`, `443` ou `3000` no host. Não adicione Caddy,
+labels `traefik.*` nem uma rede externa do proxy ao Compose. O Coolify gera a
+rota, conecta o proxy à aplicação e emite o certificado a partir do domínio do
+serviço `app`.
 
-Para uma instalação criada pelo kit, atualize pelo fluxo do próprio produto ou
-com `bash hostgator-setup-kit/update.sh` dentro da pasta daquele cliente. O
-script preserva o modo de proxy externo e aplica os arquivos de Compose
-necessários.
+O adaptador também não inclui, por enquanto, a chamada de voz WaCalls nem a
+telefonia SIP. Esses módulos exigem portas UDP diretas e devem ganhar um fluxo
+isolado antes de serem habilitados no Coolify.
 
-Não habilite o auto-deploy Git do Coolify para assumir essa mesma pilha e não
-rode `docker compose up` manualmente com apenas o compose base. Em VPS com
-Traefik externo, o override de Traefik é necessário; sem ele o contêiner pode
-ficar saudável internamente, mas o domínio responder 404 no proxy.
+## Atualizar uma instalação
 
-## Por que o deploy Git nativo do Coolify ainda não é o caminho documentado
+1. Espere uma release publicada com as três imagens no mesmo `X.Y.Z`.
+2. Troque `APP_IMAGE`, `WORKER_IMAGE` e `SCHEDULER_IMAGE` para essa release no
+   recurso daquele cliente.
+3. Faça o deploy pelo Coolify e verifique o domínio e o health check.
 
-O Coolify consegue construir aplicações e arquivos Docker Compose a partir de
-um repositório, mas o DeskcommCRM também precisa provisionar variáveis,
-migrações, administração, backup e um fluxo de atualização compatível. O
-compose padrão do projeto ainda inclui Caddy; em uma VPS com Coolify ele precisa
-do override específico do Traefik. Portanto, um adaptador nativo do Coolify só
-deve ser anunciado depois de ser versionado, testado em instalação nova e
-validado em atualização e restauração.
+Não acompanhe `main`, `latest` ou `stable` em uma instalação de cliente e não
+ative auto-deploy para mudar código de produção sem uma release. Assim, cada
+cliente fica em uma versão identificável e a atualização é uma decisão
+reversível.
 
-Até lá, use o Coolify como proxy e painel da VPS, e o kit do DeskcommCRM como
-orquestrador da instalação do CRM. Consulte também o
-[guia do kit](../hostgator-setup-kit/README.md#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy)
-e o [runbook de deploy](runbooks/deploy.md).
+## Limites deste primeiro adaptador
+
+O deploy Git do Coolify agora é o dono do runtime. Por isso não execute
+`hostgator-setup-kit/update.sh` sobre a mesma instalação: o script e o Coolify
+tentariam gerenciar os mesmos contêineres. Continue usando o kit para o
+provisionamento inicial do Supabase até existir uma etapa de bootstrap segura e
+idempotente no próprio Coolify.

@@ -34,10 +34,10 @@ import { describe, expect, it } from "vitest";
  *
  * ─── ESCOPO ──────────────────────────────────────────────────────────────────
  *
- * `docker-compose.prod.yml` e `docker-compose.traefik.yml` — os que rodam na
- * VPS do cliente. O `docker-compose.yml` (dev) está FORA de propósito: publicar
- * portas na máquina de quem desenvolve é justamente o que ele existe para
- * fazer.
+ * `docker-compose.prod.yml`, `docker-compose.traefik.yml` e
+ * `docker-compose.coolify.yml` — os que rodam na VPS do cliente. O
+ * `docker-compose.yml` (dev) está FORA de propósito: publicar portas na máquina
+ * de quem desenvolve é justamente o que ele existe para fazer.
  */
 
 const RAIZ = process.cwd();
@@ -129,7 +129,11 @@ function semComentarios(bloco: string): string {
     .join("\n");
 }
 
-const ARQUIVOS = ["docker-compose.prod.yml", "docker-compose.traefik.yml"] as const;
+const ARQUIVOS = [
+  "docker-compose.prod.yml",
+  "docker-compose.traefik.yml",
+  "docker-compose.coolify.yml",
+] as const;
 
 const SERVICOS = new Map<string, Map<string, string>>(
   ARQUIVOS.map((f) => [f, lerServicos(fs.readFileSync(path.join(RAIZ, f), "utf8"))]),
@@ -158,6 +162,10 @@ describe("a fronteira de rede do que o cliente instala", () => {
     const traefik = [...SERVICOS.get("docker-compose.traefik.yml")!.keys()];
     expect(traefik, "o override do Traefik parou de declarar serviços").toContain("app");
     expect(traefik).toContain("caddy");
+
+    expect([...SERVICOS.get("docker-compose.coolify.yml")!.keys()].sort()).toEqual(
+      ["app", "redis", "scheduler", "srh", "waha", "worker"].sort(),
+    );
   });
 
   it("só o proxy reverso publica porta no host", () => {
@@ -254,6 +262,27 @@ describe("a fronteira de rede do que o cliente instala", () => {
       `serviço com label de roteamento: ${roteados.join(", ")}. O Traefik da hospedagem\n` +
         `publica por LABEL, sem porta nenhuma — é exposição à internet que o teste de\n` +
         `\`ports:\` não enxerga. Só o \`app\` tem superfície feita para o público.`,
+    ).toEqual([]);
+  });
+
+  it("o compose do Coolify deixa a borda HTTP e o TLS para o painel", () => {
+    const coolify = fs.readFileSync(path.join(RAIZ, "docker-compose.coolify.yml"), "utf8");
+    const servicos = SERVICOS.get("docker-compose.coolify.yml")!;
+    const publicacoes: string[] = [];
+
+    for (const [nome, bloco] of servicos) {
+      const limpo = semComentarios(bloco);
+      if (/^\s{4}ports:/m.test(limpo)) publicacoes.push(`${nome}: ports`);
+      if (/traefik\./.test(limpo)) publicacoes.push(`${nome}: label Traefik`);
+    }
+
+    expect(coolify, "o Coolify deve ser o único proxy da instalação").not.toMatch(
+      /^ {2}caddy:\s*$/m,
+    );
+    expect(
+      publicacoes,
+      "o Coolify gera as rotas HTTPS e conecta o proxy à rede do recurso. Publicar portas ou " +
+        "escrever labels à mão aqui contorna o painel e pode expor um serviço interno.",
     ).toEqual([]);
   });
 

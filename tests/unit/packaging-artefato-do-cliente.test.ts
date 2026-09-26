@@ -249,6 +249,16 @@ describe("packaging — o artefato que o cliente instala", () => {
     }
   });
 
+  it("a imagem do app carrega a própria sonda de prontidão", () => {
+    const dockerfile = fs.readFileSync(path.join(RAIZ, "Dockerfile"), "utf8");
+
+    expect(dockerfile, "o Dockerfile não declara HEALTHCHECK").toMatch(/^HEALTHCHECK /m);
+    expect(
+      dockerfile,
+      "a sonda deve testar a porta interna 3000, não uma URL pública do proxy",
+    ).toContain("connect(3000,'127.0.0.1')");
+  });
+
   it("a versão vem depois das camadas caras em cada Dockerfile publicado", () => {
     // `ARG` entra na chave de cache de toda instrução seguinte do estágio. Com
     // APP_VERSION acima de um `RUN`, cada release refaz esse `RUN` (o `pnpm
