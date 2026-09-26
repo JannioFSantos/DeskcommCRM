@@ -126,6 +126,7 @@ acessibilidade).
 | [`SETUP.md`](SETUP.md) | Guia completo de env vars e setup local |
 | [`deploy-selfhost/README.md`](deploy-selfhost/README.md) | Self-host genérico |
 | [`deploy-hostgator/README.md`](deploy-hostgator/README.md) | VPS HostGator (`install.sh`, `backup.sh`, `reset-mfa.sh`) |
+| [`deploy-coolify.md`](deploy-coolify.md) | Coolify como proxy da VPS: isolamento por cliente, DNS, operação e os limites do deploy Git nativo |
 | [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) | Checklist de deploy |
 | [`ATUALIZANDO.md`](ATUALIZANDO.md) | `update.sh`, `restore.sh`, `healthcheck.sh` |
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
